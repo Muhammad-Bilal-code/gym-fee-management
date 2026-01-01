@@ -337,7 +337,7 @@ export default function MemberDetails() {
           <div className="text-2xl font-semibold">{member.full_name}</div>
           <div className="text-sm text-muted-foreground">
             {member.phone} {member.email ? `• ${member.email}` : ""} • Join:{" "}
-            {member.join_date}
+            <strong>{member.join_date}</strong>
           </div>
         </div>
 
