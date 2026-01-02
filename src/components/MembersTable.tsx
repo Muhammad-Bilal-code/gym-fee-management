@@ -23,6 +23,7 @@ type Member = {
   monthly_fee: number;
   status: "active" | "inactive";
   created_at: string;
+  photo_path: string | null; // ✅ add this
 };
 
 type PaymentMini = {
@@ -184,13 +185,42 @@ export default function MembersTable() {
     "all" | "active" | "inactive" | "overdue" | "grace"
   >("all");
 
+  const [photoUrls, setPhotoUrls] = useState<Record<string, string>>({});
+
+  useEffect(() => {
+    const loadPhotos = async () => {
+      if (!members || members.length === 0) return;
+
+      const updates: Record<string, string> = {};
+
+      for (const m of members) {
+        if (!m.photo_path) continue;
+        if (photoUrls[m.photo_path]) continue; // ✅ already cached
+
+        const { data, error } = await supabase.storage
+          .from("member-photos")
+          .createSignedUrl(m.photo_path, 60 * 60); // 1 hour
+
+        if (!error && data?.signedUrl) {
+          updates[m.photo_path] = data.signedUrl;
+        }
+      }
+
+      if (Object.keys(updates).length > 0) {
+        setPhotoUrls((prev) => ({ ...prev, ...updates }));
+      }
+    };
+
+    loadPhotos();
+  }, [members]);
+
   const fetchMembersAndPayments = async () => {
     setLoading(true);
 
     const { data, error } = await supabase
       .from("members")
       .select(
-        "id,member_no, full_name, phone, email, join_date, monthly_fee, status, created_at"
+        "id,member_no, full_name, phone, email, join_date, monthly_fee, status, created_at, photo_path"
       )
       .order("created_at", { ascending: false });
 
@@ -347,10 +377,10 @@ export default function MembersTable() {
           <TableHeader>
             <TableRow>
               <TableHead className="w-[80px]">#</TableHead>
-
+              <TableHead className="w-[90px]">Profile</TableHead>
               <TableHead>Name</TableHead>
               <TableHead>Phone</TableHead>
-              <TableHead>Email</TableHead>
+              {/* <TableHead>Email</TableHead> */}
               <TableHead>Join Date</TableHead>
               <TableHead className="text-right">Monthly Fee</TableHead>
               <TableHead>Status</TableHead>
@@ -392,12 +422,25 @@ export default function MembersTable() {
                     <TableCell className="text-muted-foreground">
                       {m.member_no ?? "—"}
                     </TableCell>
+                    <TableCell>
+                      {m.photo_path && photoUrls[m.photo_path] ? (
+                        <img
+                          src={photoUrls[m.photo_path]}
+                          alt={m.full_name}
+                          className="h-10 w-10 rounded-full object-cover border"
+                        />
+                      ) : (
+                        <span className="text-xs text-muted-foreground">
+                          N/A
+                        </span>
+                      )}
+                    </TableCell>
 
                     <TableCell className="font-medium">{m.full_name}</TableCell>
                     <TableCell>{m.phone}</TableCell>
-                    <TableCell className="text-muted-foreground">
+                    {/* <TableCell className="text-muted-foreground">
                       {m.email ?? "—"}
-                    </TableCell>
+                    </TableCell> */}
                     <TableCell>{m.join_date}</TableCell>
 
                     <TableCell className="text-right">

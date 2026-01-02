@@ -21,6 +21,7 @@ type Member = {
   join_date: string; // YYYY-MM-DD
   monthly_fee: number;
   status: "active" | "inactive";
+  photo_path: string | null; // ✅ add this
 };
 
 type Payment = {
@@ -113,6 +114,27 @@ export default function MemberDetails() {
   const [loading, setLoading] = useState(true);
   const [payingKey, setPayingKey] = useState<string | null>(null);
 
+  const [photoUrl, setPhotoUrl] = useState<string | null>(null);
+
+  useEffect(() => {
+    const run = async () => {
+      if (!member?.photo_path) return setPhotoUrl(null);
+
+      const { data, error } = await supabase.storage
+        .from("member-photos")
+        .createSignedUrl(member.photo_path, 60 * 60); // 1 hour
+
+      if (error) {
+        setPhotoUrl(null);
+        return;
+      }
+
+      setPhotoUrl(data.signedUrl);
+    };
+
+    run();
+  }, [member?.photo_path]);
+
   function isPayable(dueDate: Date) {
     const today = new Date();
     const t = new Date(
@@ -141,7 +163,9 @@ export default function MemberDetails() {
 
     const { data: m, error: mErr } = await supabase
       .from("members")
-      .select("id, full_name, phone, email, join_date, monthly_fee, status")
+      .select(
+        "id, full_name, phone, email, join_date, monthly_fee, status,photo_path"
+      )
       .eq("id", id)
       .single();
 
@@ -334,6 +358,15 @@ export default function MemberDetails() {
     <div className="p-6 space-y-4">
       <div className="flex items-center justify-between">
         <div>
+          {photoUrl ? (
+            <img
+              src={photoUrl}
+              className="h-20 w-20 rounded-full object-cover"
+            />
+          ) : (
+            <div className="h-20 w-20 rounded-full bg-muted" />
+          )}
+
           <div className="text-2xl font-semibold">{member.full_name}</div>
           <div className="text-sm text-muted-foreground">
             {member.phone} {member.email ? `• ${member.email}` : ""} • Join:{" "}
