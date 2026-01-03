@@ -12,6 +12,24 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import {
+  Dialog,
+  DialogContent,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+  DialogTrigger,
+} from "@/components/ui/dialog";
+import { Label } from "@/components/ui/label";
+import { Textarea } from "@/components/ui/textarea";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import { Input } from "@/components/ui/input";
 
 type Member = {
   id: string;
@@ -21,6 +39,7 @@ type Member = {
   join_date: string; // YYYY-MM-DD
   monthly_fee: number;
   status: "active" | "inactive";
+  notes?: string | null;
   photo_path: string | null; // ✅ add this
 };
 
@@ -116,6 +135,31 @@ export default function MemberDetails() {
 
   const [photoUrl, setPhotoUrl] = useState<string | null>(null);
 
+  const phoneRegex = /^03\d{2}-\d{7}$/;
+
+  const [editOpen, setEditOpen] = useState(false);
+  const [deleting, setDeleting] = useState(false);
+
+  const [editFullName, setEditFullName] = useState("");
+  const [editPhone, setEditPhone] = useState("");
+  const [editEmail, setEditEmail] = useState("");
+  const [editJoinDate, setEditJoinDate] = useState("");
+  const [editMonthlyFee, setEditMonthlyFee] = useState<number>(1500);
+  const [editStatus, setEditStatus] = useState<"active" | "inactive">("active");
+  const [editNotes, setEditNotes] = useState("");
+
+  useEffect(() => {
+    if (!member) return;
+
+    setEditFullName(member.full_name ?? "");
+    setEditPhone(member.phone ?? "");
+    setEditEmail(member.email ?? "");
+    setEditJoinDate(member.join_date ?? "");
+    setEditMonthlyFee(Number(member.monthly_fee ?? 0));
+    setEditStatus(member.status ?? "active");
+    setEditNotes(member.notes ?? "");
+  }, [member]);
+
   useEffect(() => {
     const run = async () => {
       if (!member?.photo_path) return setPhotoUrl(null);
@@ -134,6 +178,72 @@ export default function MemberDetails() {
 
     run();
   }, [member?.photo_path]);
+
+  const updateMember = async () => {
+    if (!member) return;
+
+    if (!editFullName.trim()) return alert("Name is required");
+    if (!phoneRegex.test(editPhone))
+      return alert("Phone must be like 0344-0208268");
+    if (!editJoinDate) return alert("Join date is required");
+    if (!editMonthlyFee || Number.isNaN(editMonthlyFee) || editMonthlyFee <= 0)
+      return alert("Monthly fee must be valid");
+
+    try {
+      const { error } = await supabase
+        .from("members")
+        .update({
+          full_name: editFullName.trim(),
+          phone: editPhone.trim(),
+          email: editEmail.trim() || null,
+          join_date: editJoinDate,
+          monthly_fee: Number(editMonthlyFee),
+          status: editStatus,
+          notes: editNotes.trim() || null,
+        })
+        .eq("id", member.id);
+
+      if (error) throw error;
+
+      setEditOpen(false);
+      await fetchAll(); // refresh member + payments
+    } catch (e: any) {
+      alert(e?.message ?? "Failed to update member");
+    }
+  };
+
+  const deleteMember = async () => {
+    if (!member) return;
+
+    const ok = window.confirm(
+      `Delete member "${member.full_name}"? This will remove the member record.`
+    );
+    if (!ok) return;
+
+    setDeleting(true);
+    try {
+      // (Optional) delete photo from storage too
+      if (member.photo_path) {
+        await supabase.storage
+          .from("member-photos")
+          .remove([member.photo_path]);
+      }
+
+      // NOTE: if payments table has FK to members, delete may fail unless cascade or delete payments first.
+      // If you face FK error, tell me and I'll give the exact fix (cascade or pre-delete payments).
+      const { error } = await supabase
+        .from("members")
+        .delete()
+        .eq("id", member.id);
+      if (error) throw error;
+
+      navigate("/"); // back to list after delete
+    } catch (e: any) {
+      alert(e?.message ?? "Failed to delete member");
+    } finally {
+      setDeleting(false);
+    }
+  };
 
   function isPayable(dueDate: Date) {
     const today = new Date();
@@ -164,7 +274,7 @@ export default function MemberDetails() {
     const { data: m, error: mErr } = await supabase
       .from("members")
       .select(
-        "id, full_name, phone, email, join_date, monthly_fee, status,photo_path"
+        "id, full_name, phone, email, join_date, monthly_fee, status,notes,photo_path"
       )
       .eq("id", id)
       .single();
@@ -374,9 +484,119 @@ export default function MemberDetails() {
           </div>
         </div>
 
-        <Button variant="outline" onClick={() => navigate("/")}>
-          Back
-        </Button>
+        <div className="flex items-center gap-2">
+          {/* EDIT */}
+          <Dialog open={editOpen} onOpenChange={setEditOpen}>
+            <DialogTrigger asChild>
+              <Button variant="outline">Edit</Button>
+            </DialogTrigger>
+
+            <DialogContent className="sm:max-w-[520px]">
+              <DialogHeader>
+                <DialogTitle>Edit member</DialogTitle>
+              </DialogHeader>
+
+              <div className="grid gap-4">
+                <div className="grid gap-2">
+                  <Label>Name *</Label>
+                  <Input
+                    value={editFullName}
+                    onChange={(e) => setEditFullName(e.target.value)}
+                  />
+                </div>
+
+                <div className="grid gap-2">
+                  <Label>Phone *</Label>
+                  <Input
+                    value={editPhone}
+                    onChange={(e) => setEditPhone(e.target.value)}
+                    placeholder="0344-0208268"
+                  />
+                  {!phoneRegex.test(editPhone) && editPhone.length > 0 && (
+                    <p className="text-xs text-red-500">Format: 0344-0208268</p>
+                  )}
+                </div>
+
+                <div className="grid gap-2">
+                  <Label>Email</Label>
+                  <Input
+                    value={editEmail}
+                    onChange={(e) => setEditEmail(e.target.value)}
+                    type="email"
+                  />
+                </div>
+
+                <div className="grid grid-cols-2 gap-3">
+                  <div className="grid gap-2">
+                    <Label>Join date *</Label>
+                    <Input
+                      value={editJoinDate}
+                      onChange={(e) => setEditJoinDate(e.target.value)}
+                      type="date"
+                    />
+                  </div>
+
+                  <div className="grid gap-2">
+                    <Label>Monthly fee *</Label>
+                    <Input
+                      value={editMonthlyFee}
+                      onChange={(e) =>
+                        setEditMonthlyFee(Number(e.target.value))
+                      }
+                      type="number"
+                      min={0}
+                    />
+                  </div>
+                </div>
+
+                <div className="grid gap-2">
+                  <Label>Status</Label>
+                  <Select
+                    value={editStatus}
+                    onValueChange={(v) => setEditStatus(v as any)}
+                  >
+                    <SelectTrigger>
+                      <SelectValue placeholder="Select status" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="active">Active</SelectItem>
+                      <SelectItem value="inactive">Inactive</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+
+                <div className="grid gap-2">
+                  <Label>Notes</Label>
+                  <Textarea
+                    value={editNotes}
+                    onChange={(e) => setEditNotes(e.target.value)}
+                  />
+                </div>
+              </div>
+
+              <DialogFooter>
+                <Button variant="secondary" onClick={() => setEditOpen(false)}>
+                  Cancel
+                </Button>
+                <Button onClick={updateMember}>Save changes</Button>
+              </DialogFooter>
+            </DialogContent>
+          </Dialog>
+
+          {/* DELETE */}
+          <Button
+            variant="destructive"
+            onClick={deleteMember}
+            disabled={deleting}
+          >
+            {deleting ? "Deleting..." : "Delete"}
+          </Button>
+
+          {/* BACK */}
+          <Button variant="outline" onClick={() => navigate("/")}>
+            Back
+          </Button>
+        </div>
       </div>
 
       <div className="grid gap-3 sm:grid-cols-4">

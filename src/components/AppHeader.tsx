@@ -19,7 +19,7 @@ export default function AppHeader() {
   return (
     <header className="border-b bg-background">
       <div className="flex h-14 items-center justify-between px-6">
-        <div className="font-semibold">Gym Fee Manager</div>
+        <div className="font-semibold">Fitness Mania Fee Portal</div>
 
         <div className="flex items-center gap-3">
           <span className="text-sm text-muted-foreground">{user?.email}</span>

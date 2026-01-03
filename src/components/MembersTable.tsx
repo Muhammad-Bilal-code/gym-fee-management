@@ -182,7 +182,7 @@ export default function MembersTable() {
 
   const [query, setQuery] = useState("");
   const [statusFilter, setStatusFilter] = useState<
-    "all" | "active" | "inactive" | "overdue" | "grace"
+    "all" | "active" | "inactive" | "due_soon" | "overdue" | "grace"
   >("all");
 
   const [photoUrls, setPhotoUrls] = useState<Record<string, string>>({});
@@ -280,11 +280,14 @@ export default function MembersTable() {
         if (statusFilter === "active") return m.status === "active";
         if (statusFilter === "inactive") return m.status === "inactive";
 
-        // fee overdue filter (paid-aware)
-        if (statusFilter === "overdue" || statusFilter === "grace") {
+        if (
+          statusFilter === "overdue" ||
+          statusFilter === "grace" ||
+          statusFilter === "due_soon"
+        ) {
           const paidSet = paidByMember.get(m.id);
           const fee = getFeeStatePaidAware(m.join_date, paidSet);
-          return fee.key === statusFilter; // "overdue" OR "grace"
+          return fee.key === statusFilter; // matches "overdue" | "grace" | "due_soon"
         }
 
         return true;
@@ -293,14 +296,35 @@ export default function MembersTable() {
         if (!q) return true;
 
         const memberNoStr = m.member_no?.toString() ?? "";
-        const normalizedQuery = q.replace(/[^0-9]/g, ""); // keep digits only
+
+        // normalize numbers (remove dash, spaces, etc.)
+        const normalizedQuery = q.replace(/\D/g, "");
+        const normalizedPhone = m.phone.replace(/\D/g, "");
 
         return (
           m.full_name.toLowerCase().includes(q) ||
-          (normalizedQuery && memberNoStr.includes(normalizedQuery))
+          (normalizedQuery && memberNoStr.includes(normalizedQuery)) ||
+          (normalizedQuery && normalizedPhone.includes(normalizedQuery))
         );
       });
   }, [members, query, statusFilter, paidByMember]);
+
+  const feeCounts = useMemo(() => {
+    let dueSoon = 0;
+    let grace = 0;
+    let overdue = 0;
+
+    for (const m of members) {
+      const paidSet = paidByMember.get(m.id);
+      const fee = getFeeStatePaidAware(m.join_date, paidSet);
+
+      if (fee.key === "due_soon") dueSoon++;
+      else if (fee.key === "grace") grace++;
+      else if (fee.key === "overdue") overdue++;
+    }
+
+    return { dueSoon, grace, overdue };
+  }, [members, paidByMember]);
 
   return (
     <div className="space-y-4">
@@ -310,7 +334,7 @@ export default function MembersTable() {
           <Input
             value={query}
             onChange={(e) => setQuery(e.target.value)}
-            placeholder="Search by name, phone, email..."
+            placeholder="Search by name, phone, member-id"
             className="sm:w-[320px]"
           />
 
@@ -348,7 +372,13 @@ export default function MembersTable() {
               className="border-red-500 text-red-600 hover:bg-red-600 hover:text-white"
             >
               Overdue
+              {feeCounts.overdue > 0 && (
+                <span className="ml-2 rounded-full bg-red-600 px-2 py-0.5 text-xs text-white">
+                  {feeCounts.overdue}
+                </span>
+              )}
             </Button>
+
             <Button
               type="button"
               variant={statusFilter === "grace" ? "default" : "outline"}
@@ -357,6 +387,26 @@ export default function MembersTable() {
               className="border-orange-500 text-orange-600 hover:bg-orange-500 hover:text-white"
             >
               Grace
+              {feeCounts.grace > 0 && (
+                <span className="ml-2 rounded-full bg-orange-500 px-2 py-0.5 text-xs text-white">
+                  {feeCounts.grace}
+                </span>
+              )}
+            </Button>
+
+            <Button
+              type="button"
+              variant={statusFilter === "due_soon" ? "default" : "outline"}
+              onClick={() => setStatusFilter("due_soon")}
+              size="sm"
+              className="border-yellow-500 text-yellow-700 hover:bg-yellow-400 hover:text-black"
+            >
+              Due Soon
+              {feeCounts.dueSoon > 0 && (
+                <span className="ml-2 rounded-full bg-yellow-500 px-2 py-0.5 text-xs text-black">
+                  {feeCounts.dueSoon}
+                </span>
+              )}
             </Button>
           </div>
         </div>
@@ -370,6 +420,16 @@ export default function MembersTable() {
           {loading ? "Refreshing..." : "Refresh"}
         </Button>
       </div>
+
+      {!loading && (
+        <div className="text-sm text-muted-foreground">
+          Showing{" "}
+          <span className="font-medium text-foreground">{filtered.length}</span>{" "}
+          of{" "}
+          <span className="font-medium text-foreground">{members.length}</span>{" "}
+          members
+        </div>
+      )}
 
       {/* Table */}
       <div className="rounded-xl border overflow-hidden">
@@ -393,7 +453,7 @@ export default function MembersTable() {
             {loading ? (
               <TableRow>
                 <TableCell
-                  colSpan={8}
+                  colSpan={9}
                   className="py-10 text-center text-muted-foreground"
                 >
                   Loading members...
@@ -402,7 +462,7 @@ export default function MembersTable() {
             ) : filtered.length === 0 ? (
               <TableRow>
                 <TableCell
-                  colSpan={8}
+                  colSpan={9}
                   className="py-10 text-center text-muted-foreground"
                 >
                   No members found.
@@ -489,16 +549,6 @@ export default function MembersTable() {
           </TableBody>
         </Table>
       </div>
-
-      {!loading && (
-        <div className="text-sm text-muted-foreground">
-          Showing{" "}
-          <span className="font-medium text-foreground">{filtered.length}</span>{" "}
-          of{" "}
-          <span className="font-medium text-foreground">{members.length}</span>{" "}
-          members
-        </div>
-      )}
     </div>
   );
 }
