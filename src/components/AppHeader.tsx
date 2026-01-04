@@ -1,5 +1,5 @@
 import { LogOut } from "lucide-react";
-import { useNavigate } from "react-router-dom";
+import { Link, useNavigate } from "react-router-dom";
 import { useAuth } from "@/contexts/AuthContext";
 import { Button } from "@/components/ui/button";
 
@@ -19,7 +19,9 @@ export default function AppHeader() {
   return (
     <header className="border-b bg-background">
       <div className="flex h-14 items-center justify-between px-6">
-        <div className="font-semibold">Fitness Mania Fee Portal</div>
+        <div className="font-semibold">
+          <Link to="/">Fitness Mania Fee Portal</Link>
+        </div>
 
         <div className="flex items-center gap-3">
           <span className="text-sm text-muted-foreground">{user?.email}</span>
