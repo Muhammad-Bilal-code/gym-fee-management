@@ -610,19 +610,17 @@ export default function MemberDetails() {
           >
             {deleting ? "Deleting..." : "Delete"}
           </Button>
+          {/* <Card className="shadow-sm">
+            <CardHeader className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+              <CardTitle>Member Card</CardTitle>
+            </CardHeader>
 
-          {/* BACK */}
-          <Button variant="outline" onClick={() => navigate("/")}>
-            Back
-          </Button>
-        </div>
-      </div>
-
-      {/* MEMBER CARD IN MODAL */}
-      <Card className="shadow-sm">
-        <CardHeader className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-          <CardTitle>Member Card</CardTitle>
-
+            <CardContent className="text-sm text-muted-foreground">
+              Click{" "}
+              <span className="font-medium text-foreground">View Card</span> to
+              open the member card preview and download it as PDF.
+            </CardContent>
+          </Card> */}
           <Dialog>
             <DialogTrigger asChild>
               <Button variant="outline">View Card</Button>
@@ -676,13 +674,15 @@ export default function MemberDetails() {
               </div>
             </DialogContent>
           </Dialog>
-        </CardHeader>
 
-        <CardContent className="text-sm text-muted-foreground">
-          Click <span className="font-medium text-foreground">View Card</span>{" "}
-          to open the member card preview and download it as PDF.
-        </CardContent>
-      </Card>
+          {/* BACK */}
+          <Button variant="outline" onClick={() => navigate("/")}>
+            Back
+          </Button>
+        </div>
+      </div>
+
+      {/* MEMBER CARD IN MODAL */}
 
       {/* QUICK STATS */}
       <div className="grid gap-3 sm:grid-cols-5">
