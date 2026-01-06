@@ -173,7 +173,7 @@
 
 // MemberCard.displayName = "MemberCard";
 
-import React, { forwardRef, useMemo } from "react";
+import { forwardRef, useMemo } from "react";
 
 type Props = {
   gymName: string;

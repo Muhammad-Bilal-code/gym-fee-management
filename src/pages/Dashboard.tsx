@@ -14,8 +14,8 @@ type Member = {
 };
 
 export default function Dashboard() {
-  const [members, setMembers] = useState<Member[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [_, setMembers] = useState<Member[]>([]);
+  const [__, setLoading] = useState(true);
 
   const fetchMembers = async () => {
     setLoading(true);
