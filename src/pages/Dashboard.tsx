@@ -1,7 +1,6 @@
 import { useEffect, useState } from "react";
 import { supabase } from "@/lib/supabase";
 import AddMemberDialog from "@/components/AddMemberDialog";
-import AppHeader from "@/components/AppHeader";
 import MembersTable from "@/components/MembersTable";
 
 type Member = {
