@@ -1,6 +1,7 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { supabase } from "@/lib/supabase";
+
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -12,6 +13,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+
 import {
   Dialog,
   DialogContent,
@@ -20,6 +22,7 @@ import {
   DialogTitle,
   DialogTrigger,
 } from "@/components/ui/dialog";
+
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import {
@@ -31,8 +34,12 @@ import {
 } from "@/components/ui/select";
 import { Input } from "@/components/ui/input";
 
+import { MemberCard } from "@/components/MemberCard";
+import { downloadCardAsPdf, shareCardOnWhatsApp } from "@/lib/downloadCardPdf";
+
 type Member = {
   id: string;
+  member_no: number | null;
   full_name: string;
   phone: string;
   email: string | null;
@@ -40,7 +47,7 @@ type Member = {
   monthly_fee: number;
   status: "active" | "inactive";
   notes?: string | null;
-  photo_path: string | null; // ✅ add this
+  photo_path: string | null;
 };
 
 type Payment = {
@@ -55,7 +62,7 @@ type Payment = {
 
 const GRACE_DAYS = 3;
 
-// ---------- Date helpers (timezone-safe display + month-cycles) ----------
+// ---------- Date helpers ----------
 function daysInMonth(year: number, monthIndex0: number) {
   return new Date(year, monthIndex0 + 1, 0).getDate();
 }
@@ -72,7 +79,6 @@ function addMonthsKeepDay(base: Date, months: number) {
   const nm = ((targetMonth % 12) + 12) % 12;
   const nd = clampDay(ny, nm, d);
 
-  // keep midday to avoid timezone midnight flips
   return new Date(ny, nm, nd, 12, 0, 0);
 }
 function diffDays(a: Date, b: Date) {
@@ -91,20 +97,20 @@ function parseYMD(s: string) {
 }
 
 type Row = {
-  cycle_due_date: string; // YYYY-MM-DD (key)
+  cycle_due_date: string;
   dueDateObj: Date;
-  labelMonth: string; // "2025-12"
+  labelMonth: string;
   state: "paid" | "ok" | "due_soon" | "grace" | "overdue";
   stateLabel: string;
   payment?: Payment;
 };
 
-// Fee state for a cycle if NOT paid
 function getCycleState(due: Date, today = new Date()) {
   const daysToDue = diffDays(due, today);
 
   if (daysToDue > GRACE_DAYS)
     return { key: "ok" as const, label: `Due in ${daysToDue}d` };
+
   if (daysToDue >= 0 && daysToDue <= GRACE_DAYS)
     return {
       key: "due_soon" as const,
@@ -124,6 +130,34 @@ function getCycleState(due: Date, today = new Date()) {
   };
 }
 
+function feeBadge(state: Row["state"], label: string) {
+  if (state === "paid")
+    return (
+      <Badge className="bg-green-600 text-white hover:bg-green-600">Paid</Badge>
+    );
+  if (state === "ok")
+    return (
+      <Badge className="bg-green-600 text-white hover:bg-green-600">
+        {label}
+      </Badge>
+    );
+  if (state === "due_soon")
+    return (
+      <Badge className="bg-yellow-400 text-black hover:bg-yellow-400">
+        {label}
+      </Badge>
+    );
+  if (state === "grace")
+    return (
+      <Badge className="bg-orange-500 text-white hover:bg-orange-500">
+        {label}
+      </Badge>
+    );
+  return (
+    <Badge className="bg-red-600 text-white hover:bg-red-600">{label}</Badge>
+  );
+}
+
 export default function MemberDetails() {
   const { id } = useParams();
   const navigate = useNavigate();
@@ -138,6 +172,7 @@ export default function MemberDetails() {
   const phoneRegex = /^03\d{2}-\d{7}$/;
 
   const [editOpen, setEditOpen] = useState(false);
+  const [savingEdit, setSavingEdit] = useState(false);
   const [deleting, setDeleting] = useState(false);
 
   const [editFullName, setEditFullName] = useState("");
@@ -147,6 +182,9 @@ export default function MemberDetails() {
   const [editMonthlyFee, setEditMonthlyFee] = useState<number>(1500);
   const [editStatus, setEditStatus] = useState<"active" | "inactive">("active");
   const [editNotes, setEditNotes] = useState("");
+
+  // ✅ capture only the card (avoid capturing shadcn/tailwind parent)
+  const cardRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
     if (!member) return;
@@ -166,84 +204,14 @@ export default function MemberDetails() {
 
       const { data, error } = await supabase.storage
         .from("member-photos")
-        .createSignedUrl(member.photo_path, 60 * 60); // 1 hour
+        .createSignedUrl(member.photo_path, 60 * 60);
 
-      if (error) {
-        setPhotoUrl(null);
-        return;
-      }
-
+      if (error) return setPhotoUrl(null);
       setPhotoUrl(data.signedUrl);
     };
 
     run();
   }, [member?.photo_path]);
-
-  const updateMember = async () => {
-    if (!member) return;
-
-    if (!editFullName.trim()) return alert("Name is required");
-    if (!phoneRegex.test(editPhone))
-      return alert("Phone must be like 0344-0208268");
-    if (!editJoinDate) return alert("Join date is required");
-    if (!editMonthlyFee || Number.isNaN(editMonthlyFee) || editMonthlyFee <= 0)
-      return alert("Monthly fee must be valid");
-
-    try {
-      const { error } = await supabase
-        .from("members")
-        .update({
-          full_name: editFullName.trim(),
-          phone: editPhone.trim(),
-          email: editEmail.trim() || null,
-          join_date: editJoinDate,
-          monthly_fee: Number(editMonthlyFee),
-          status: editStatus,
-          notes: editNotes.trim() || null,
-        })
-        .eq("id", member.id);
-
-      if (error) throw error;
-
-      setEditOpen(false);
-      await fetchAll(); // refresh member + payments
-    } catch (e: any) {
-      alert(e?.message ?? "Failed to update member");
-    }
-  };
-
-  const deleteMember = async () => {
-    if (!member) return;
-
-    const ok = window.confirm(
-      `Delete member "${member.full_name}"? This will remove the member record.`
-    );
-    if (!ok) return;
-
-    setDeleting(true);
-    try {
-      // (Optional) delete photo from storage too
-      if (member.photo_path) {
-        await supabase.storage
-          .from("member-photos")
-          .remove([member.photo_path]);
-      }
-
-      // NOTE: if payments table has FK to members, delete may fail unless cascade or delete payments first.
-      // If you face FK error, tell me and I'll give the exact fix (cascade or pre-delete payments).
-      const { error } = await supabase
-        .from("members")
-        .delete()
-        .eq("id", member.id);
-      if (error) throw error;
-
-      navigate("/"); // back to list after delete
-    } catch (e: any) {
-      alert(e?.message ?? "Failed to delete member");
-    } finally {
-      setDeleting(false);
-    }
-  };
 
   function isPayable(dueDate: Date) {
     const today = new Date();
@@ -263,8 +231,7 @@ export default function MemberDetails() {
       0,
       0
     );
-
-    return t >= d; // payable only if today >= due date
+    return t >= d;
   }
 
   const fetchAll = async () => {
@@ -274,7 +241,7 @@ export default function MemberDetails() {
     const { data: m, error: mErr } = await supabase
       .from("members")
       .select(
-        "id, full_name, phone, email, join_date, monthly_fee, status,notes,photo_path"
+        "id, member_no, full_name, phone, email, join_date, monthly_fee, status, notes, photo_path"
       )
       .eq("id", id)
       .single();
@@ -306,6 +273,7 @@ export default function MemberDetails() {
 
   useEffect(() => {
     fetchAll();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [id]);
 
   const rows: Row[] = useMemo(() => {
@@ -314,7 +282,7 @@ export default function MemberDetails() {
     const today = new Date();
     const join = parseYMD(member.join_date);
 
-    // rule: first due = join_date + 1 month
+    // first due = join date itself (your current behavior)
     let due = new Date(
       join.getFullYear(),
       join.getMonth(),
@@ -324,67 +292,14 @@ export default function MemberDetails() {
       0
     );
 
-    // build payments map by cycle_due_date
     const payMap = new Map<string, Payment>();
     for (const p of payments) payMap.set(p.cycle_due_date, p);
 
-    // generate cycles until we cover current cycle + grace window
-    const list: Row[] = [];
-    const maxIterations = 240; // safety (20 years)
-    let i = 0;
-
-    while (i < maxIterations) {
-      const key = fmtDate(due);
-      const monthLabel = key.slice(0, 7); // YYYY-MM
-
-      const paid = payMap.get(key);
-
-      if (paid) {
-        list.push({
-          cycle_due_date: key,
-          dueDateObj: due,
-          labelMonth: monthLabel,
-          state: "paid",
-          stateLabel: "Paid",
-          payment: paid,
-        });
-      } else {
-        const st = getCycleState(due, today);
-        list.push({
-          cycle_due_date: key,
-          dueDateObj: due,
-          labelMonth: monthLabel,
-          state: st.key,
-          stateLabel: st.label,
-        });
-      }
-
-      // stop condition: once due is sufficiently in the future (beyond "due soon" window)
-      // we only need history up to next upcoming due (optional). If you want full future schedule, remove this.
-      const daysToDue = diffDays(due, today);
-      if (daysToDue > GRACE_DAYS) break;
-
-      // move to next cycle
-      due = addMonthsKeepDay(due, 1);
-      i++;
-    }
-
-    // For full history: generate from first due up to current date cycle
-    // The above stops early. Let's instead generate full history:
-    // We'll rebuild properly: from first due until "today + 1 month" (for upcoming visibility)
-
     const full: Row[] = [];
-    due = new Date(
-      join.getFullYear(),
-      join.getMonth(),
-      join.getDate(),
-      12,
-      0,
-      0
-    );
+    const end = addMonthsKeepDay(today, 1);
 
-    const end = addMonthsKeepDay(today, 1); // show up to one upcoming cycle
-    i = 0;
+    let i = 0;
+    const maxIterations = 240;
 
     while (i < maxIterations && diffDays(due, end) <= 0) {
       const key = fmtDate(due);
@@ -415,7 +330,6 @@ export default function MemberDetails() {
       i++;
     }
 
-    // latest first
     return full.reverse();
   }, [member, payments]);
 
@@ -424,7 +338,8 @@ export default function MemberDetails() {
     const unpaid = rows.filter((r) => r.state !== "paid").length;
     const overdue = rows.filter((r) => r.state === "overdue").length;
     const grace = rows.filter((r) => r.state === "grace").length;
-    return { paid, unpaid, overdue, grace };
+    const dueSoon = rows.filter((r) => r.state === "due_soon").length;
+    return { paid, unpaid, overdue, grace, dueSoon };
   }, [rows]);
 
   const markPaid = async (cycle_due_date: string) => {
@@ -438,14 +353,96 @@ export default function MemberDetails() {
         method: "cash",
         note: null,
       });
-
       if (error) throw error;
-
       await fetchAll();
     } catch (e: any) {
       alert(e?.message ?? "Failed to mark paid");
     } finally {
       setPayingKey(null);
+    }
+  };
+
+  const updateMember = async () => {
+    if (!member) return;
+
+    if (!editFullName.trim()) return alert("Name is required");
+    if (!phoneRegex.test(editPhone))
+      return alert("Phone must be like 0344-0208268");
+    if (!editJoinDate) return alert("Join date is required");
+    if (!editMonthlyFee || Number.isNaN(editMonthlyFee) || editMonthlyFee <= 0)
+      return alert("Monthly fee must be valid");
+
+    setSavingEdit(true);
+    try {
+      const { error } = await supabase
+        .from("members")
+        .update({
+          full_name: editFullName.trim(),
+          phone: editPhone.trim(),
+          email: editEmail.trim() || null,
+          join_date: editJoinDate,
+          monthly_fee: Number(editMonthlyFee),
+          status: editStatus,
+          notes: editNotes.trim() || null,
+        })
+        .eq("id", member.id);
+
+      if (error) throw error;
+
+      setEditOpen(false);
+      await fetchAll();
+    } catch (e: any) {
+      if (
+        e?.code === "23505" ||
+        String(e?.message ?? "").includes("uq_members_owner_phone")
+      ) {
+        alert("This phone number is already used by another member.");
+      } else {
+        alert(e?.message ?? "Failed to update member");
+      }
+    } finally {
+      setSavingEdit(false);
+    }
+  };
+
+  const deleteMember = async () => {
+    if (!member) return;
+
+    const ok = window.confirm(
+      `Delete member "${member.full_name}"?\n\nThis will remove the member record.`
+    );
+    if (!ok) return;
+
+    setDeleting(true);
+    try {
+      if (member.photo_path) {
+        await supabase.storage
+          .from("member-photos")
+          .remove([member.photo_path]);
+      }
+
+      const { error } = await supabase
+        .from("members")
+        .delete()
+        .eq("id", member.id);
+      if (error) throw error;
+
+      navigate("/");
+    } catch (e: any) {
+      alert(e?.message ?? "Failed to delete member");
+    } finally {
+      setDeleting(false);
+    }
+  };
+
+  const handleShare = async () => {
+    if (!cardRef.current) return;
+
+    try {
+      await shareCardOnWhatsApp(cardRef.current);
+    } catch (err) {
+      console.error(err);
+      alert("Failed to share PDF");
     }
   };
 
@@ -464,34 +461,50 @@ export default function MemberDetails() {
     );
   }
 
-  return (
-    <div className="p-6 space-y-4">
-      <div className="flex items-center justify-between">
-        <div>
-          {photoUrl ? (
-            <img
-              src={photoUrl}
-              className="h-20 w-20 rounded-full object-cover"
-            />
-          ) : (
-            <div className="h-20 w-20 rounded-full bg-muted" />
-          )}
+  const cardMemberId = member.member_no ? String(member.member_no) : "—";
 
-          <div className="text-2xl font-semibold">{member.full_name}</div>
-          <div className="text-sm text-muted-foreground">
-            {member.phone} {member.email ? `• ${member.email}` : ""} • Join:{" "}
-            <strong>{member.join_date}</strong>
+  return (
+    <div className="p-6 space-y-6">
+      {/* TOP BAR (clean actions) */}
+      <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+        <div className="space-y-1">
+          <div className="text-2xl font-semibold">
+            {member.full_name}{" "}
+            <span className="text-muted-foreground text-base font-normal">
+              (ID: {cardMemberId})
+            </span>
+          </div>
+          <div className="text-sm text-muted-foreground flex flex-wrap gap-x-3 gap-y-1">
+            <span>
+              <span className="font-medium text-foreground">Phone:</span>{" "}
+              {member.phone}
+            </span>
+            <span>
+              <span className="font-medium text-foreground">Join:</span>{" "}
+              {member.join_date}
+            </span>
+            <span>
+              <span className="font-medium text-foreground">Fee:</span>{" "}
+              {Number(member.monthly_fee).toFixed(0)}
+            </span>
+            <span>
+              {member.status === "active" ? (
+                <Badge>Active</Badge>
+              ) : (
+                <Badge variant="secondary">Inactive</Badge>
+              )}
+            </span>
           </div>
         </div>
 
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2 justify-end">
           {/* EDIT */}
           <Dialog open={editOpen} onOpenChange={setEditOpen}>
             <DialogTrigger asChild>
               <Button variant="outline">Edit</Button>
             </DialogTrigger>
 
-            <DialogContent className="sm:max-w-[520px]">
+            <DialogContent className="sm:max-w-[560px]">
               <DialogHeader>
                 <DialogTitle>Edit member</DialogTitle>
               </DialogHeader>
@@ -575,10 +588,16 @@ export default function MemberDetails() {
               </div>
 
               <DialogFooter>
-                <Button variant="secondary" onClick={() => setEditOpen(false)}>
+                <Button
+                  variant="secondary"
+                  onClick={() => setEditOpen(false)}
+                  disabled={savingEdit}
+                >
                   Cancel
                 </Button>
-                <Button onClick={updateMember}>Save changes</Button>
+                <Button onClick={updateMember} disabled={savingEdit}>
+                  {savingEdit ? "Saving..." : "Save changes"}
+                </Button>
               </DialogFooter>
             </DialogContent>
           </Dialog>
@@ -591,6 +610,70 @@ export default function MemberDetails() {
           >
             {deleting ? "Deleting..." : "Delete"}
           </Button>
+          {/* <Card className="shadow-sm">
+            <CardHeader className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+              <CardTitle>Member Card</CardTitle>
+            </CardHeader>
+
+            <CardContent className="text-sm text-muted-foreground">
+              Click{" "}
+              <span className="font-medium text-foreground">View Card</span> to
+              open the member card preview and download it as PDF.
+            </CardContent>
+          </Card> */}
+          <Dialog>
+            <DialogTrigger asChild>
+              <Button variant="outline">View Card</Button>
+            </DialogTrigger>
+
+            <DialogContent className="sm:max-w-[760px]">
+              <DialogHeader>
+                <DialogTitle>Member Card Preview</DialogTitle>
+              </DialogHeader>
+
+              {/* Card preview area */}
+              <div className="flex flex-col items-center gap-4">
+                {/* white bg wrapper so pdf libs don't capture okclh/tailwind bg */}
+                <div className="w-full rounded-xl border bg-white p-3 overflow-hidden">
+                  {/* 👇 scale down ONLY for preview (PDF will still use original element size if your download uses this same ref) */}
+                  <div
+                    className="origin-top-left"
+                    style={{
+                      transform: "scale(0.78)", // adjust 0.7 - 0.9
+                      width: "fit-content",
+                    }}
+                  >
+                    <MemberCard
+                      ref={cardRef}
+                      gymName="Fitness Mania"
+                      memberId={cardMemberId}
+                      fullName={member.full_name}
+                      phone={member.phone}
+                      monthlyFee={member.monthly_fee}
+                      photoUrl={photoUrl}
+                    />
+                  </div>
+                </div>
+
+                {/* actions */}
+                <div className="flex flex-wrap items-center justify-end gap-2 w-full">
+                  <Button
+                    variant="outline"
+                    onClick={async () => {
+                      if (!cardRef.current) return;
+                      await downloadCardAsPdf(
+                        cardRef.current,
+                        `member-${cardMemberId}-card.pdf`
+                      );
+                    }}
+                  >
+                    Download PDF
+                  </Button>
+                  <Button onClick={handleShare}>Share on WhatsApp</Button>
+                </div>
+              </div>
+            </DialogContent>
+          </Dialog>
 
           {/* BACK */}
           <Button variant="outline" onClick={() => navigate("/")}>
@@ -599,8 +682,11 @@ export default function MemberDetails() {
         </div>
       </div>
 
-      <div className="grid gap-3 sm:grid-cols-4">
-        <Card>
+      {/* MEMBER CARD IN MODAL */}
+
+      {/* QUICK STATS */}
+      <div className="grid gap-3 sm:grid-cols-5">
+        <Card className="shadow-sm">
           <CardHeader>
             <CardTitle className="text-sm">Paid months</CardTitle>
           </CardHeader>
@@ -608,7 +694,8 @@ export default function MemberDetails() {
             {summary.paid}
           </CardContent>
         </Card>
-        <Card>
+
+        <Card className="shadow-sm">
           <CardHeader>
             <CardTitle className="text-sm">Unpaid months</CardTitle>
           </CardHeader>
@@ -616,7 +703,17 @@ export default function MemberDetails() {
             {summary.unpaid}
           </CardContent>
         </Card>
-        <Card>
+
+        <Card className="shadow-sm">
+          <CardHeader>
+            <CardTitle className="text-sm">Due Soon</CardTitle>
+          </CardHeader>
+          <CardContent className="text-2xl font-semibold">
+            {summary.dueSoon}
+          </CardContent>
+        </Card>
+
+        <Card className="shadow-sm">
           <CardHeader>
             <CardTitle className="text-sm">Grace</CardTitle>
           </CardHeader>
@@ -624,7 +721,8 @@ export default function MemberDetails() {
             {summary.grace}
           </CardContent>
         </Card>
-        <Card>
+
+        <Card className="shadow-sm">
           <CardHeader>
             <CardTitle className="text-sm">Overdue</CardTitle>
           </CardHeader>
@@ -634,21 +732,28 @@ export default function MemberDetails() {
         </Card>
       </div>
 
-      <Card>
-        <CardHeader>
-          <CardTitle>Fee history</CardTitle>
+      {/* FEE HISTORY */}
+      <Card className="shadow-sm">
+        <CardHeader className="flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between">
+          <div>
+            <CardTitle>Fee history</CardTitle>
+            <div className="text-sm text-muted-foreground">
+              Latest months on top • Mark paid only on/after due date
+            </div>
+          </div>
         </CardHeader>
+
         <CardContent>
           <div className="rounded-xl border overflow-hidden">
             <Table>
               <TableHeader>
-                <TableRow>
-                  <TableHead>Month</TableHead>
-                  <TableHead>Due Date</TableHead>
-                  <TableHead>Status</TableHead>
-                  <TableHead className="text-right">Amount</TableHead>
+                <TableRow className="bg-muted/50">
+                  <TableHead className="w-[110px]">Month</TableHead>
+                  <TableHead className="w-[120px]">Due Date</TableHead>
+                  <TableHead className="w-[170px]">Status</TableHead>
+                  <TableHead className="text-right w-[120px]">Amount</TableHead>
                   <TableHead>Paid At</TableHead>
-                  <TableHead className="text-right">Action</TableHead>
+                  <TableHead className="text-right w-[140px]">Action</TableHead>
                 </TableRow>
               </TableHeader>
 
@@ -663,8 +768,14 @@ export default function MemberDetails() {
                     </TableCell>
                   </TableRow>
                 ) : (
-                  rows.map((r) => (
-                    <TableRow key={r.cycle_due_date}>
+                  rows.map((r, idx) => (
+                    <TableRow
+                      key={r.cycle_due_date}
+                      className={[
+                        idx % 2 === 0 ? "bg-background" : "bg-muted/30",
+                        "hover:bg-muted/60 transition-colors",
+                      ].join(" ")}
+                    >
                       <TableCell className="font-medium">
                         {r.labelMonth}
                       </TableCell>
@@ -672,33 +783,7 @@ export default function MemberDetails() {
                         {r.cycle_due_date}
                       </TableCell>
 
-                      <TableCell>
-                        {r.state === "paid" && (
-                          <Badge className="bg-green-600 text-white hover:bg-green-600">
-                            Paid
-                          </Badge>
-                        )}
-                        {r.state === "ok" && (
-                          <Badge className="bg-green-600 text-white hover:bg-green-600">
-                            {r.stateLabel}
-                          </Badge>
-                        )}
-                        {r.state === "due_soon" && (
-                          <Badge className="bg-yellow-400 text-black hover:bg-yellow-400">
-                            {r.stateLabel}
-                          </Badge>
-                        )}
-                        {r.state === "grace" && (
-                          <Badge className="bg-orange-500 text-white hover:bg-orange-500">
-                            {r.stateLabel}
-                          </Badge>
-                        )}
-                        {r.state === "overdue" && (
-                          <Badge className="bg-red-600 text-white hover:bg-red-600">
-                            {r.stateLabel}
-                          </Badge>
-                        )}
-                      </TableCell>
+                      <TableCell>{feeBadge(r.state, r.stateLabel)}</TableCell>
 
                       <TableCell className="text-right">
                         {r.payment
@@ -719,7 +804,7 @@ export default function MemberDetails() {
                             onClick={() => markPaid(r.cycle_due_date)}
                             disabled={
                               payingKey === r.cycle_due_date ||
-                              !isPayable(r.dueDateObj) // 👈 MAIN RULE
+                              !isPayable(r.dueDateObj)
                             }
                             title={
                               !isPayable(r.dueDateObj)
