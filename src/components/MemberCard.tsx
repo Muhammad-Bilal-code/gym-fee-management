@@ -671,7 +671,7 @@ export const MemberCard = forwardRef<HTMLDivElement, Props>(
               fontWeight: "bold",
             }}
           >
-            Keep this card safe
+            Keep this card safe and secure
           </h2>
         </div>
       </div>
