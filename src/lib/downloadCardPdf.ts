@@ -1,4 +1,3 @@
-import html2canvas from "html2canvas";
 import { toPng } from "html-to-image";
 import jsPDF from "jspdf";
 
@@ -263,14 +262,14 @@ export async function downloadCardAsPdf(el: HTMLElement, filename: string) {
 }
 
 /** phone: "0344-0208268" -> "923440208268" */
-function toWhatsAppNumberPK(phone: string) {
-  const digits = (phone || "").replace(/\D/g, "");
-  if (!digits) return "";
-  if (digits.startsWith("92")) return digits;
-  if (digits.startsWith("0")) return "92" + digits.slice(1);
-  // fallback: treat as already international
-  return digits;
-}
+// function toWhatsAppNumberPK(phone: string) {
+//   const digits = (phone || "").replace(/\D/g, "");
+//   if (!digits) return "";
+//   if (digits.startsWith("92")) return digits;
+//   if (digits.startsWith("0")) return "92" + digits.slice(1);
+//   // fallback: treat as already international
+//   return digits;
+// }
 
 /**
  * ✅ Share on WhatsApp:
@@ -278,8 +277,8 @@ function toWhatsAppNumberPK(phone: string) {
  * - Else: open WhatsApp chat with prefilled text, and user manually attach downloaded PDF.
  */
 export async function shareCardOnWhatsApp(
-  element: HTMLElement,
-  fileName = "member-card.pdf"
+  element: HTMLElement
+  // fileName = "member-card.pdf"
 ) {
   const blob = await renderCardPdfBlob(element);
 
