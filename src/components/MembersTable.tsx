@@ -581,25 +581,32 @@ export default function MembersTable() {
                     </TableCell>
 
                     {/* Profile */}
+                    {/* Profile */}
                     <TableCell>
-                      {m.photo_path && photoUrls[m.photo_path] ? (
-                        <img
-                          src={photoUrls[m.photo_path]}
-                          alt={m.full_name}
-                          className="h-10 w-10 rounded-full object-cover border cursor-zoom-in"
-                          onClick={(e) => {
-                            e.stopPropagation(); // ✅ row click prevent
-                            setPreview({
-                              name: m.full_name,
-                              url: photoUrls[m.photo_path],
-                            });
-                          }}
-                        />
-                      ) : (
-                        <span className="text-xs text-muted-foreground">
-                          N/A
-                        </span>
-                      )}
+                      {(() => {
+                        const path = m.photo_path ?? undefined;
+                        const url = path ? photoUrls[path] : undefined;
+
+                        if (!url) {
+                          return (
+                            <span className="text-xs text-muted-foreground">
+                              N/A
+                            </span>
+                          );
+                        }
+
+                        return (
+                          <img
+                            src={url}
+                            alt={m.full_name}
+                            className="h-10 w-10 rounded-full object-cover border cursor-zoom-in"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setPreview({ name: m.full_name, url });
+                            }}
+                          />
+                        );
+                      })()}
                     </TableCell>
 
                     {/* <TableCell>

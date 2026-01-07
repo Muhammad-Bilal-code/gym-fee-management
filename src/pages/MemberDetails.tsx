@@ -477,7 +477,7 @@ export default function MemberDetails() {
               borderRadius: "5px",
             }}
           >
-            <img src={photoUrl} />
+            {photoUrl ? <img src={photoUrl} alt="Member" /> : null}
           </div>
           <div className="flex flex-col gap-2">
             <div className="text-2xl font-semibold">
