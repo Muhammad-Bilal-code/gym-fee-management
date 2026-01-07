@@ -246,6 +246,8 @@ export default function MemberDetails() {
       .eq("id", id)
       .single();
 
+    console.log(m);
+
     if (mErr) {
       console.error(mErr);
       setMember(null);
@@ -466,34 +468,45 @@ export default function MemberDetails() {
   return (
     <div className="p-6 space-y-6">
       {/* TOP BAR (clean actions) */}
-      <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-        <div className="space-y-1">
-          <div className="text-2xl font-semibold">
-            {member.full_name}{" "}
-            <span className="text-muted-foreground text-base font-normal">
-              (ID: {cardMemberId})
-            </span>
+      <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
+        <div className="flex gap-4">
+          <div
+            style={{
+              width: "200px",
+              border: "2px solid black",
+              borderRadius: "5px",
+            }}
+          >
+            <img src={photoUrl} />
           </div>
-          <div className="text-sm text-muted-foreground flex flex-wrap gap-x-3 gap-y-1">
-            <span>
-              <span className="font-medium text-foreground">Phone:</span>{" "}
-              {member.phone}
-            </span>
-            <span>
-              <span className="font-medium text-foreground">Join:</span>{" "}
-              {member.join_date}
-            </span>
-            <span>
-              <span className="font-medium text-foreground">Fee:</span>{" "}
-              {Number(member.monthly_fee).toFixed(0)}
-            </span>
-            <span>
-              {member.status === "active" ? (
-                <Badge>Active</Badge>
-              ) : (
-                <Badge variant="secondary">Inactive</Badge>
-              )}
-            </span>
+          <div className="flex flex-col gap-2">
+            <div className="text-2xl font-semibold">
+              {member.full_name}{" "}
+              <span className="text-muted-foreground text-base font-normal">
+                (ID: {cardMemberId})
+              </span>
+            </div>
+            <div className="text-sm text-muted-foreground flex flex-col flex-wrap gap-x-3 gap-y-2">
+              <span>
+                <span className="font-medium text-foreground">Phone:</span>{" "}
+                {member.phone}
+              </span>
+              <span>
+                <span className="font-medium text-foreground">Join:</span>{" "}
+                {member.join_date}
+              </span>
+              <span>
+                <span className="font-medium text-foreground">Fee:</span>{" "}
+                {Number(member.monthly_fee).toFixed(0)}
+              </span>
+              <span>
+                {member.status === "active" ? (
+                  <Badge>Active</Badge>
+                ) : (
+                  <Badge variant="secondary">Inactive</Badge>
+                )}
+              </span>
+            </div>
           </div>
         </div>
 
